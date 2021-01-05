@@ -1,0 +1,613 @@
+---
+title: "IAPT- End Term"
+author: "Mareeswaran M"
+date: "02/01/2021"
+output: pdf_document
+header-includes:
+  - \usepackage{booktabs}
+  - \usepackage{longtable}
+  - \usepackage{array}
+  - \usepackage{multirow}
+  - \usepackage{wrapfig}
+  - \usepackage{float}
+  - \usepackage{colortbl}
+  - \usepackage{pdflscape}
+  - \usepackage{tabu}
+  - \usepackage{threeparttable}
+  - \usepackage{threeparttablex}
+  - \usepackage[normalem]{ulem}
+  - \usepackage{makecell}
+  - \usepackage{xcolor}
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Week 4 Pre-Ranking Beta:
+
+
+## The Data
+
+The data used here is the monthly stock data from WRDS data base from the year 1956 to 1980.The monthly returns on the market portfolio $r_{mt}$ were defined as the value weighted returns that would have been earned on a portfolio consisting of  every security at the beginning of each month.The risk-free rate was defined as the
+30-day rate on U.S. Treasury Bills for the period 1956-80.
+
+
+```{r,warning=FALSE,message=FALSE,echo=FALSE}
+#monthly data
+rm(list=ls())
+
+monthly_return=readxl::read_xlsx("Monthly_data.xlsx")
+
+library(dplyr)
+finser=c(6000:6800)
+monthly_return= monthly_return %>% filter(!(monthly_return$`Standard Industrial Classification Code` %in% finser))
+
+#remove rows with na in return
+library(tidyr)
+monthly_return=monthly_return %>% drop_na(Returns)
+
+monthly_return$month_Year= format(as.Date(monthly_return$`Names Date`, format="%d/%m/%Y"),"%Y%m")
+monthly_return$Year= format(as.Date(monthly_return$`Names Date`, format="%d/%m/%Y"),"%Y")
+monthly_return$Year=as.numeric(monthly_return$Year)
+monthly_return$Returns=as.numeric(monthly_return$Returns)
+monthly_return$Returns=log(1+monthly_return$Returns)
+monthly_return$month_Year=as.numeric(monthly_return$month_Year)
+
+```
+
+
+```{r,warning=FALSE,message=FALSE,echo=FALSE}
+#valavg R_m
+valavg_rm=read.csv("valavg_rm.csv")
+valavg_rm=valavg_rm[,-1]
+
+# US T Bill
+tbill=readxl::read_xlsx("us_treasury.xlsx")
+tbill$month_Year=substr(tbill$`Calendar Date`,0,6)
+
+##merger data
+
+monthly_return=merge(monthly_return,
+                 valavg_rm[,c("month_Year","valueweight_avg")])
+
+monthly_return=merge(monthly_return,tbill[,c("month_Year","30 Day Bill Returns")])
+
+names(monthly_return)[10]="r_it"
+names(monthly_return)[14]="r_mt"
+names(monthly_return)[15]="r_ft"
+
+monthly_return$R_it=monthly_return$r_it - monthly_return$r_ft
+monthly_return$R_mt=monthly_return$r_mt - monthly_return$r_ft
+
+
+```
+
+## The Ranking Procedure
+
+We are estimating a rolling $\hat \beta$ measure for each stock at the end of June each year by estimating the time series regression specified in Equation (1) on the past 60 months of monthly returns (pre-estimation period).
+This $\hat \beta$ estimate is referred to as its pre-ranking $\hat \beta$ for that year. For a given year T, the pre-ranking
+$\hat \beta$ for a stock is obtained from the regression of the time series of monthly returns over the period
+starting from July of year T-5 to June of year T. The estimation is done only if monthly return data
+is available for that stock for at-least 24 months in that 60 month period. We have Kept track of the number of instances estimation was not done due to lack of data availability.
+$$R_{it} = \alpha_i + \beta_i R_{mt} + \epsilon_{it} \ \ \ \ (1)$$
+$R_{it}$ represents the excess return on the security over the risk-free rate and is calculated as $r_{it}$ - $r_{ft}$.
+Similarly, $R_{mt}$ represents the excess return on the market over the risk-free rate and is calculated as $r_{mt}$ - $r_{ft}$.  $r_{it}$ and $r_{mt}$ represent the monthly returns for security i and the value weighted market
+portfolio, respectively. \
+
+From the regression equations, we would have a pre-ranking $\hat \beta$ of stocks for 21 years in our sample period. We have sorted the stocks in the order of their pre-ranking $\hat \beta$ and then, these securities were then ranked from low to high on the basis of the estimates$\hat \beta$ and we allocated the stocks equally among 20 portfolios each year based on their pre-ranking $\hat \beta$ for that year - PB1 (lowest pre-ranking $\hat \beta$) to PB20 (highest pre-ranking $\hat \beta$). The
+portfolio composition would change each year depending on the pre-ranking $\hat \beta$ of the stocks that enter the portfoliio that year. \
+
+
+
+```{r,warning=FALSE,message=FALSE,echo=FALSE}
+library(kableExtra)
+###no_of_firms each year
+
+library(dplyr)
+
+
+firm_count= monthly_return %>% 
+  group_by(Year) %>%
+  summarise(firm_count=length(unique(`Company Name`)))
+
+
+#kable(firm_count, 
+#      caption = "Total Number of Securities in Sample period, by Year",
+#      label = "tables", format = "latex",booktabs=T, linesep = "") %>%
+#  kable_styling(latex_options = "HOLD_position")
+```
+
+ 
+
+\pagebreak
+
+In this way we obtained 21 years of monthly return on 20 portfolios from the 4301 securities in the data file.Since at each stage we used all listed securities for which
+at least 24 months of data were available in the immediately preceding five-year period,
+the total number of securities used in the analysis varied through time ranging from 1058
+to 4301, and thus the number of securities contained in each portfolio changed from year to year. The total number of securities from which the portfolios were formed at the
+beginning of each year is given in Table 1. \
+
+
+```{r,warning=FALSE,message=FALSE,echo=FALSE}
+##counting number of firms in each 5 year 
+
+#making 5 year interval
+x=c(1956:1976)
+cd=list()
+for (i in c(1:21)) {
+  a=x[i]
+  b=x[i]+4
+  c=list(c(a:b))
+  cd=rbind(cd,c)
+}
+
+#function to get number of firms < 24 months
+
+d1=function(x){ 
+  cnt=filter(monthly_return,Year %in% unlist(cd[x]))%>%
+    group_by(`Company Name`)%>%
+    count(.,`Company Name`)
+  l=sum(cnt$n<24)
+  l2=sum(cnt$n>23)
+  l1=nrow(cnt)
+  c=list(l,l2,l1)
+  c
+}
+
+
+#get data frame of count of total firms and missing firms
+mis=data.frame()
+for (i in c(1:21)) {
+  Year=i
+  dropout_firms=unlist(d1(i))[1]
+  firms_grt24=unlist(d1(i))[2]
+  Total_firms=unlist(d1(i))[3]
+  dt=data.frame(Year,dropout_firms,firms_grt24,Total_firms)
+  mis=rbind(mis,dt)
+}
+
+mis$Year=c(1960:1980)
+mis$drop_per=(mis$dropout_firms/mis$Total_firms)*100
+mis =mis %>%
+  select(Year,dropout_firms,drop_per, everything())
+
+mis$drop_per= round(mis$drop_per,digits =  1)
+
+kable(mis,format = "latex",booktabs=T,escape = FALSE, 
+      linesep = "", align="c",
+      caption = "Total Number of Securities Droping out and Entering All
+             Portfolios, by Year" ,
+      col.names = linebreak(c("Year","Number of Securities\ndroping out",
+                              "Percentage of Securities\nDroping Out",
+                              "Number of Securities\nEntering into Portfolios",
+                              "Total Number\nof Securities")))%>%
+  kable_styling(latex_options = "HOLD_position",font_size = 8)
+  
+```
+
+ 
+
+```{r,warning=FALSE,message=FALSE,echo=FALSE}
+##regression and betas into data frames
+
+library(plyr) 
+library(dplyr)
+
+fil=monthly_return %>% filter(!is.na(`Company Name`))%>%
+    filter(Year %in% unlist(cd[2])) %>%
+    group_by(`Company Name`)%>%
+    count(.,"`Company Name`")%>%
+    filter_all(all_vars(freq>23))
+
+beta=list()
+for (i in c(1:21)) {
+  fil=monthly_return %>% filter(!is.na(`Company Name`))%>%
+    filter(Year %in% unlist(cd[i])) %>%
+    group_by(`Company Name`)%>%
+    count(.,"`Company Name`")%>%
+    filter_all(all_vars(freq>23))
+  
+  fm=c(fil$`Company.Name`)
+  r1=filter(monthly_return,Year %in% unlist(cd[i]) & `Company Name` %in% fm)
+      
+  models = dlply(r1,"`Company Name`", function(df)
+    lm(R_it ~ R_mt, data = df))
+  
+  dt=data.frame(i,ldply(models,function(k)coef(summary(k))))
+  
+  dt1=data.frame(Year=dt$i[c(TRUE, FALSE)],
+                Company_Name=dt$Company.Name[c(TRUE, FALSE)] , 
+                Alpha_i = dt$Estimate[c(TRUE, FALSE)], 
+                Beta_i = dt$Estimate[c(FALSE, TRUE)],
+                T_alpha_i=dt$t.value[c(TRUE, FALSE)])
+  beta[[i]]=dt1
+  
+}
+
+
+beta_data = do.call(rbind, beta)
+beta_data$Year=beta_data$Year+1959
+colnames(beta_data)[2] <- "Company Name"
+
+```
+
+```{r,warning=FALSE,message=FALSE,echo=FALSE}
+#portfolio formation
+library(data.table)
+
+lab=c("PB1","PB2","PB3","PB4","PB5","PB6","PB7","PB8","PB9","PB10",
+      "PB11","PB12","PB13","PB14","PB15","PB16","PB17","PB18","PB19","PB20")
+setDT(beta_data)[,PB := cut(Beta_i, quantile(Beta_i, probs = 0:20/20),
+                            labels = lab, include.lowest = TRUE), by = Year]
+
+```
+
+\pagebreak
+
+The following table shows the number of firms in each portfolio throughout the 21 year sample period. Since we have allotted the securities equally among 20 portfolio, all the 20 portfolio of a particular year will have same number of securities. But the number of firms in a particular portfolio will change over years. \
+
+```{r,warning=FALSE,message=FALSE,echo=FALSE}
+# no. of firms in each portfolio over years
+library(dplyr)
+detach(package:plyr)
+port_no=beta_data %>% 
+  group_by(Year,PB)%>%
+  count(.,PB)
+
+
+library(tidyr)
+portfoliono= spread(port_no,key=PB,value = n)
+
+c=data.frame(portfoliono[,1],portfoliono[,12:21])
+kable(list(portfoliono[,1:11],  
+           matrix(numeric(), nrow=0, ncol=1),
+           c), 
+      caption = "Number of firms in each portfolios over the Years",
+      format = "latex", booktabs = TRUE,linesep ="")%>%
+  kable_styling(latex_options = "HOLD_position",font_size = 8)
+
+```
+\
+
+\pagebreak
+
+
+The following histogram shows the shift in the number of firms in portfolios `PB1, PB5, PB10, PB15, PB20` throughout the 21 year sample period. This graph visually explains the shift in the number of firms in the selected portfolios. A similar graph of all 20 portfolios is not visually clear, so plotted for the selected portfolios.
+
+```{r,warning=FALSE,message=FALSE,echo=FALSE}
+portno1= port_no %>% 
+  filter(PB %in% c("PB1", "PB5", "PB10","PB15","PB20"))
+
+library(ggplot2)
+ggplot(portno1, aes(x = Year, y = n,fill=PB,label = n)) +
+  geom_bar(stat="identity")+ theme(legend.position="bottom")+
+    ylab("Number of Securities")+ggtitle("Number of firms in Portfolios over Years")+
+    geom_text(size = 3, position = position_stack(vjust = 0.5), color = "white")
+
+```
+
+\pagebreak
+
+
+```{r,warning=FALSE,message=FALSE,echo=FALSE}
+##port data 
+
+port_data = merge(beta_data, monthly_return, by=c("Company Name","Year"), all.x=TRUE)
+
+port_data=select(port_data,-8:-12,-16:-17)
+
+##
+portno1= port_no %>% 
+  filter(PB %in% c("PB1", "PB5", "PB10","PB15","PB20"))
+
+#portno1 %>% ggplot(aes(x=Year, y=n,group=PB,color=PB)) +
+#  geom_line()
+
+
+```
+
+
+
+```{r,warning=FALSE,message=FALSE,echo=FALSE}
+## Value weighted monthly return by portfolio
+# weight
+library(tidyr)
+library(dplyr)
+
+
+port_data=port_data%>%
+  group_by(Year,PB,month_Year)%>%
+  mutate(TotalRetrun=sum(r_it,na.rm = TRUE))
+
+port_data$weight=port_data$r_it /port_data$TotalRetrun
+port_data$TotalRetrun=as.numeric(port_data$TotalRetrun)
+port_data$weight=as.numeric(port_data$weight)
+# weighted return
+valavg=data.frame(port_data %>%
+                    group_by(Year,PB,month_Year) %>%
+                    summarise(valueweight_avg=sum((weight*r_it),na.rm = TRUE)))
+
+
+```
+
+
+The following graphs shows the value weighted monthly returns of the portfolios and their evolution over the sample period. We have plotted for the portfolios `PB1, PB5, PB10, PB15, PB20`. \
+
+
+```{r,warning=FALSE,message=FALSE,echo=FALSE}
+##avg plots
+library(ggplot2)
+library(dplyr)
+library(tidyverse)
+#scale_y_continuous(limits = c(-0.1,0.1))+
+
+PB1ret= valavg%>% filter(PB %in% c("PB1"))%>%drop_na(month_Year)
+ggplot(PB1ret,aes(x=factor(month_Year),y=valueweight_avg,group=1))+
+  geom_line(aes(y=valueweight_avg))+
+  xlab("Month & Year")+ylab("Value Weighted Return")+
+  ggtitle("Value Weighted Monthly Return of PB1")+
+  scale_x_discrete(breaks =
+                     PB1ret$month_Year[c(T,F,F,F,F,F,F,F,F,F,F,F)])+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+
+PB5ret= valavg%>% filter(PB %in% c("PB5"))%>%drop_na(month_Year)
+ggplot(PB5ret,aes(x=factor(month_Year),y=valueweight_avg,group=1))+
+  geom_line(aes(y=valueweight_avg))+
+  xlab("Month & Year")+ylab("Value Weighted Return")+
+  ggtitle("Value Weighted Monthly Return of PB5")+
+  scale_x_discrete(breaks =
+                     PB5ret$month_Year[c(T,F,F,F,F,F,F,F,F,F,F,F)])+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+PB10ret= valavg%>% filter(PB %in% c("PB10"))%>%drop_na(month_Year)
+ggplot(PB10ret,aes(x=factor(month_Year),y=valueweight_avg,group=1))+
+  geom_line(aes(y=valueweight_avg))+
+  xlab("Month & Year")+ylab("Value Weighted Return")+
+  ggtitle("Value Weighted Monthly Return of PB10")+
+  scale_x_discrete(breaks =
+                     PB10ret$month_Year[c(T,F,F,F,F,F,F,F,F,F,F,F)])+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+PB15ret= valavg%>% filter(PB %in% c("PB15"))%>%drop_na(month_Year)
+ggplot(PB15ret,aes(x=factor(month_Year),y=valueweight_avg,group=1))+
+  geom_line(aes(y=valueweight_avg))+
+  xlab("Month & Year")+ylab("Value Weighted Return")+
+  ggtitle("Value Weighted Monthly Return of PB15")+
+  scale_x_discrete(breaks =
+                     PB15ret$month_Year[c(T,F,F,F,F,F,F,F,F,F,F,F)])+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+PB20ret= valavg%>% filter(PB %in% c("PB20"))%>%drop_na(month_Year)
+ggplot(PB20ret,aes(x=factor(month_Year),y=valueweight_avg,group=1))+
+  geom_line(aes(y=valueweight_avg))+
+  xlab("Month & Year")+ylab("Value Weighted Return")+ggtitle("Value Weighted Monthly Return of PB20")+
+  scale_x_discrete(breaks =
+                     PB1ret$month_Year[c(T,F,F,F,F,F,F,F,F,F,F,F)])+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+```
+
+As we can see, with higher the beta portfolio, the value weighted return is also increasing and have extreme returns at some years.
+This is not an usual scene but that's the character of high beta portfolios. One will not choose a high risk portfolio unless there is high return. \
+
+High risk portfolios have high volatility (variance) than the low risk portfolios. As, we can see, the volatility is increased throughout from low risk to high risk portfolios. Also, the negative return is so high in low risk portfolios but compared to high risk portfolios. \
+
+Portfolio PB20 has an extreme value-weighted return of around 200 in the year 1967. Portfolio PB15 has an extreme value-weighted return of 70 in the year 1975. Portfolio PB10 has an extreme return of 80 in the year 1970. PB5 has an extreme return of 30 in the year 1977. PB has an extreme return of more than 50 in the year 1969.
+
+
+\pagebreak
+
+
+# Week 5
+
+
+Here, we conduct a time series estimation of Equation(1) for each of the 20 portfolios over the entire sample period from 1956 to 1980. \
+
+The following table shows the coefficients of all 20 portfolios over the sample period. \ 
+
+```{r,warning=FALSE,message=FALSE,echo=FALSE}
+##time series estimation portfolio wise
+library(plyr) 
+
+## time series estimation full periods
+models1 = dlply(port_data,"PB", function(df)
+  lm(R_it ~ R_mt, data = df))
+
+
+beta_portfolio=data.frame(ldply(models1,function(k)coef(summary(k))))
+beta_portfolio1 =data.frame(Portfolio=beta_portfolio$PB[c(TRUE, FALSE)],
+                            Alpha_i = beta_portfolio$Estimate[c(TRUE, FALSE)],
+                            Beta_i = beta_portfolio$Estimate[c(FALSE, TRUE)],
+                            T_alpha_i=beta_portfolio$t.value[c(TRUE, FALSE)])
+
+library(tidyr)
+#beta_portfolio1$Estimate=as.numeric(beta_portfolio1$Estimate)
+
+beta_portfoliot= setNames(data.frame(t(beta_portfolio1[,-1])), beta_portfolio1[,1])
+
+library(data.table)
+setDT(beta_portfoliot, keep.rownames = "Coefficients")
+
+coefforder1=c("Beta_i","Alpha_i","T_alpha_i")
+
+beta_portfoliot= beta_portfoliot %>%
+  slice(match(coefforder1, Coefficients))
+
+beta_portfoliot[2,2:21]=beta_portfoliot[2,2:21]*100
+
+beta_portfoliot[,2:21]=round(beta_portfoliot[,2:21],4)
+
+beta_portfoliot$Coefficients=c("Beta","Alpha*100","t(alpha)")
+#a3=beta_portfoliot[,1:11]
+#a4=data.frame(beta_portfoliot[,1],beta_portfoliot[,12:21])
+
+#kable(a3,format = "latex", booktabs = TRUE,
+#      caption = "Summary of Coefficients over the Entire Sample Period")%>%kable_styling(font_size = 7)
+#kable(a4,format = "latex", booktabs = TRUE)%>%
+#  kable_styling(font_size = 7)
+
+a=data.frame(beta_portfoliot[,1],beta_portfoliot[,12:21])
+kable(list(beta_portfoliot[,1:11],  
+           matrix(numeric(), nrow=0, ncol=1),
+           a), 
+      caption = "Summary of Coefficients over the Entire Sample Period",
+      format = "latex", booktabs = TRUE)%>%
+  kable_styling(latex_options = "HOLD_position",font_size = 9)
+
+
+
+```
+
+In the above table, the Portfolio PB1 contains the lowest-risk securities and portfolio PB20 contains the highest-risk securities. we can see that the estimated risk coefficients $\hat \beta$ range from 0.0704 for portfolio PB1 to 2.4128 for portfolio PB20. The critical intercepts($\hat \alpha$) are given in second line of Table 3 and the Student "t" values are given directly below them. \
+Note that the intercepts Alpha($\hat \alpha$) are consistently negative for high-risk portfolios from portfolio PB10 ($\hat \beta >1$). For PB7, PB8, PB9, the intecept is negative but almost it is zero. And the intercept Alpha is consistently positive for low-risk portfolios($\hat \beta<1$).
+
+\pagebreak
+
+Then, we repeat the time series estimation of 20 portfolios by dividing the above sample period into four non overlapping sub-periods
+(i.e., Jul 1960 - Jun 1965, Jul 1965 - Jun 1970 , Jul 1970 - Jun 1975, Jul Year 1975 - Dec Year 1980).\
+
+The following table show the coefficients of 20 portfolios over the sample period 1 to 4.\
+
+
+```{r,warning=FALSE,message=FALSE,echo=FALSE}
+## sub period portfolio coefficients 
+monthyr=c(sort(unique(port_data$month_Year)))
+monthyr=monthyr[-1:-6]
+
+myr=list()
+for (i in c(1,61,121,181)) {
+  a=monthyr[i]
+  b=monthyr[i+60]
+  c=list(c(a:b))
+  myr=rbind(myr,c)
+}
+#sub 1
+subperiod1 =port_data %>%
+  filter(month_Year %in% unlist(myr[1])) %>%
+  dlply(.,"PB", function(df)
+  lm(R_it ~ R_mt, data = df))
+
+subper1=data.frame(ldply(subperiod1,function(k)coef(summary(k))))
+subper1 =data.frame(Portfolio=subper1$PB[c(TRUE, FALSE)],
+                    Beta_i1 = subper1$Estimate[c(FALSE, TRUE)],
+                    Alpha_i1 = subper1$Estimate[c(TRUE, FALSE)],
+                    T_alpha_i1=subper1$t.value[c(TRUE, FALSE)])
+
+#names(subper1)=c("PB","1Alpha_i", "1Beta_i")
+
+subper1=setNames(data.frame(t(subper1[,-1])), subper1[,1])
+subper1[2,]=subper1[2,]*100
+
+#sub 2
+subperiod2 =port_data %>%
+  filter(month_Year %in% unlist(myr[2])) %>%
+  dlply(.,"PB", function(df)
+  lm(R_it ~ R_mt, data = df))
+
+subper2=data.frame(ldply(subperiod2,function(k)coef(summary(k))))
+subper2 =data.frame(Portfolio=subper2$PB[c(TRUE, FALSE)],
+                    Beta_i2 = subper2$Estimate[c(FALSE, TRUE)],
+                    Alpha_i2 = subper2$Estimate[c(TRUE, FALSE)],
+                    T_alpha_i2=subper2$t.value[c(TRUE, FALSE)])
+
+#names(subper1)=c("PB","1Alpha_i", "1Beta_i")
+
+subper2=setNames(data.frame(t(subper2[,-1])), subper2[,1])
+subper2[2,]=subper2[2,]*100
+
+#sub 3
+subperiod3 =port_data %>%
+  filter(month_Year %in% unlist(myr[3])) %>%
+  dlply(.,"PB", function(df)
+  lm(R_it ~ R_mt, data = df))
+
+subper3=data.frame(ldply(subperiod3,function(k)coef(summary(k))))
+subper3 =data.frame(Portfolio=subper3$PB[c(TRUE, FALSE)],
+                    Beta_i3 = subper3$Estimate[c(FALSE, TRUE)],
+                    Alpha_i3 = subper3$Estimate[c(TRUE, FALSE)],
+                    T_alpha_i3=subper3$t.value[c(TRUE, FALSE)])
+
+#names(subper1)=c("PB","1Alpha_i", "1Beta_i")
+
+subper3=setNames(data.frame(t(subper3[,-1])), subper3[,1])
+subper3[2,]=subper3[2,]*100
+
+#sub 4
+subperiod4 =port_data %>%
+  filter(month_Year %in% c(unlist(myr[4]),198008,198009,198010,
+         198011,198012)) %>%
+  dlply(.,"PB", function(df)
+    lm(R_it ~ R_mt, data = df))
+
+subper4=data.frame(ldply(subperiod4,function(k)coef(summary(k))))
+subper4 =data.frame(Portfolio=subper4$PB[c(TRUE, FALSE)],
+                    Beta_i4 = subper4$Estimate[c(FALSE, TRUE)],
+                    Alpha_i4 = subper4$Estimate[c(TRUE, FALSE)],
+                    T_alpha_i4=subper4$t.value[c(TRUE, FALSE)])
+
+#names(subper1)=c("PB","1Alpha_i", "1Beta_i")
+
+subper4=setNames(data.frame(t(subper4[,-1])), subper4[,1])
+subper4[2,]=subper4[2,]*100
+
+
+subperiod_coeff=rbind(subper1,subper2,subper3,subper4)
+library(data.table)
+setDT(subperiod_coeff, keep.rownames = "Coefficients")
+
+coefforder=c("Beta_i1","Beta_i2","Beta_i3","Beta_i4",
+             "Alpha_i1","Alpha_i2","Alpha_i3","Alpha_i4" ,
+             "T_alpha_i1","T_alpha_i2","T_alpha_i3","T_alpha_i4")
+
+
+subperiod_coeff= subperiod_coeff %>%
+  slice(match(coefforder, Coefficients))
+
+subperiod_coeff$`Sub Period`=c(1:4,1:4,1:4)
+
+#subperiod_coeff=subperiod_coeff[-1,]
+subperiod_coeff =subperiod_coeff %>%
+  select(Coefficients,`Sub Period`, everything())
+subperiod_coeff$Coefficients=c("Beta"," "," "," ",
+             "Alpha*100"," "," "," ",
+             "t(alpha)"," "," "," ")
+
+subperiod_coeff[,3:22]= round(subperiod_coeff[,3:22],4)
+#t3=subperiod_coeff[,1:12]
+#t4=data.frame(subperiod_coeff[,1:2],subperiod_coeff[,13:22])
+
+#kable(t3,format = "latex", booktabs = TRUE,
+#      caption = "Summary of Coefficients for the Subperiods")%>%
+#   kable_styling(font_size = 7)
+#kable(t4,format = "latex", booktabs = TRUE)%>%
+#   kable_styling(font_size = 7)
+
+b=data.frame(subperiod_coeff[,1:2],subperiod_coeff[,13:22])
+kable(list(subperiod_coeff[,1:12],  
+           matrix(numeric(), nrow=0, ncol=1),
+           b), 
+      caption = "Summary of Coefficients of the portfolios over the Subperiods",
+      format = "latex", booktabs = TRUE,linesep =c("", "", "", "\\addlinespace"))%>%
+  kable_styling(latex_options = "HOLD_position",font_size = 8)
+```
+
+\
+
+
+From the table ,we can see that for sub period 1, the intercept $\hat \alpha$ is positive for low-risk portfolios and negative for high-risk portfolios.\
+
+In the sub-period 2, there isn't a consistent pattern in the intercept values, but overall, still the low-risk portfolios had earned more returns on average than the high-risk returns earned less returns on average. \
+
+In sub-period 3, the intercept is negative for all the portfolios. All portfolios earned less return on average in this period. The extreme risk portfolios(low-risk and high-risk) have large negative intercepts compared to moderate risk portfolios.\
+
+In sub-period 4, all portfolios have positive intercepts. But, still the lowest risk portfolio PB1 has 0.5728 while, the high risk portfolio has 0.1879. Also, overall, the low risk portfolios have high intercept values than the high-risk portfolios. Meaning, the low-risk portfolios have earned higher returns on average compared to high-risk portfolios.
+
+
+
+
+
+
+
